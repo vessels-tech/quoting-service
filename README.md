@@ -2,7 +2,7 @@
 [![Git Commit](https://img.shields.io/github/last-commit/mojaloop/quoting-service.svg?style=flat)](https://github.com/mojaloop/quoting-service/commits/master)
 [![Git Releases](https://img.shields.io/github/release/mojaloop/quoting-service.svg?style=flat)](https://github.com/mojaloop/quoting-service/releases)
 [![Docker pulls](https://img.shields.io/docker/pulls/mojaloop/quoting-service.svg?style=flat)](https://hub.docker.com/r/mojaloop/quoting-service)
-[![CircleCI](https://circleci.com/gh/mojaloop/quoting-service.svg?style=svg)](https://circleci.com/gh/mojaloop/quoting-service)
+[![CircleCI](https://circleci.com/gh/mojaloop/quoting-service.svg?style=svg)](https://app.circleci.com/pipelines/github/mojaloop/quoting-service)
 
 The Quoting Service was donated by the Mowali project working in collaboration with Orange and MTN. 
 The Quoting service is now part of the Mojaloop project and deployment.
