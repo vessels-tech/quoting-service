@@ -224,14 +224,31 @@ jobs:
       - run:
           name: Load the pre-built docker image from workspace
           command: docker load -i /tmp/docker-image.tar
+      - run:
+          name: Download the mojaloop/ci-config repo
+          command: |
+            git clone https://github.com/mojaloop/ci-config /tmp/ci-config
+            # TODO: remove step once we merge in this feature branch
+            git fetch && git checkout feature/anchore-scanning
+
+            # Generate the mojaloop anchore-policy
+            cd /tmp/ci-config/container-scanning && ./mojaloop-policy-generator.js /tmp/mojaloop-policy.json
+      # Analyze the base image for comparison
+      # Note: this could be pre-loaded for efficency, but we will look at optimizations later
+      - anchore/analyze_local_image:
+          image_name: docker.io/node:12.16.0-alpine
+          policy_bundle_file_path: /tmp/mojaloop-policy.json
+          policy_failure: false
+          timeout: '500'
       - anchore/analyze_local_image:
           dockerfile_path: ./Dockerfile
           image_name: ${DOCKER_ORG}/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_TAG}
           # Anchore bug: if policy_failure is `true`, reports don't get written - we manually check for failures below
           policy_failure: false
           timeout: '500'
+          policy_bundle_file_path: /tmp/mojaloop-policy.json
       - run:
-          name: Evaluate Failures.
+          name: Summarize Failures.
           command: |
             if [[ ! $(which jq) ]]; then
               (set +o pipefail; apk add jq || apt-get install -y jq || yum install -y jq)
@@ -250,14 +267,14 @@ jobs:
             aws s3 cp anchore-reports ${AWS_S3_DIR_ANCHORE_REPORTS}/${CIRCLE_PROJECT_REPONAME}/ --recursive
             aws s3 rm ${AWS_S3_DIR_ANCHORE_REPORTS}/latest/ --recursive --exclude "*" --include "${CIRCLE_PROJECT_REPONAME}*"
             aws s3 cp anchore-reports ${AWS_S3_DIR_ANCHORE_REPORTS}/latest/ --recursive
-        
-            # TODO: Enable this when we want to increase the strictness of our security policies
-            # failCount=$(cat anchore-reports/*policy*.json | grep 'fail' | wc -l)
-            # echo "FailCount is: ${failCount}"
-            # if [ $failCount -gt 0 ]; then
-            #   printf "Failed with a policy failure count of: ${failCount}"
-            #   exit 1
-            # fi
+      - run:
+          name: Evaluate failures
+          command: |
+            # TODO: find out which reports are the base and derived to run the tool
+            ls -la anchore-reports
+
+            # TODO: change paths to proper files
+            cd /tmp/ci-config/container-scanning && ./anchore-result-diff.js example-base-result.json example-derived-result.json
 
       - store_artifacts:
           path: anchore-reports
@@ -293,7 +310,6 @@ jobs:
               -H 'Content-type: application/json' \
               -H 'cache-control: no-cache' \
               -d "{\"text\": \"*${CIRCLE_PROJECT_REPONAME}* - Release \`${CIRCLE_TAG}\`: https://github.com/mojaloop/${CIRCLE_PROJECT_REPONAME}/releases/tag/${CIRCLE_TAG}\"}"
-
         
   deploy:
     executor: deploy-kube/helm-kube
