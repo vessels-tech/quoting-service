@@ -162,6 +162,7 @@ class QuotesModel {
       // internal-error
       throw ErrorHandler.CreateInternalServerFSPIOPError('Missing quoteRequest', null, fspiopSource)
     }
+
     await this.db.getParticipant(fspiopSource, LOCAL_ENUM.PAYER_DFSP)
     await this.db.getParticipant(fspiopDestination, LOCAL_ENUM.PAYEE_DFSP)
   }
@@ -610,7 +611,7 @@ class QuotesModel {
         // we didnt get an endpoint for the payee dfsp!
         // make an error callback to the initiator
         const fspiopError = ErrorHandler.CreateFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.DESTINATION_FSP_ERROR, `No FSPIOP_CALLBACK_URL_QUOTES found for quote ${quoteId} PAYER party`, null, fspiopSource)
-        return this.sendErrorCallback(fspiopSource, fspiopError, quoteId, headers)
+        return this.sendErrorCallback(fspiopSource, fspiopError, quoteId, headers, true)
       }
 
       const fullCallbackUrl = `${endpoint}/quotes/${quoteId}`
@@ -708,7 +709,7 @@ class QuotesModel {
       const fspiopError = ErrorHandler.CreateFSPIOPErrorFromErrorInformation(error)
 
       // Needed to add await here to prevent 'span already finished' bug
-      await this.sendErrorCallback(headers[ENUM.Http.Headers.FSPIOP.SOURCE], fspiopError, quoteId, headers, span)
+      await this.sendErrorCallback(headers[ENUM.Http.Headers.FSPIOP.DESTINATION], fspiopError, quoteId, headers, span, false)
 
       return newError
     } catch (err) {
@@ -825,7 +826,7 @@ class QuotesModel {
     const childSpan = span.getChild('qs_quote_sendErrorCallback')
     try {
       await childSpan.audit({ headers, params: { quoteId } }, EventSdk.AuditEventAction.start)
-      return await this.sendErrorCallback(fspiopSource, fspiopError, quoteId, headers, childSpan)
+      return await this.sendErrorCallback(fspiopSource, fspiopError, quoteId, headers, childSpan, true)
     } catch (err) {
       // any-error
       // not much we can do other than log the error
@@ -844,7 +845,7 @@ class QuotesModel {
    *
    * @returns {promise}
    */
-  async sendErrorCallback (fspiopSource, fspiopError, quoteId, headers, span) {
+  async sendErrorCallback (fspiopSource, fspiopError, quoteId, headers, span, modifyHeaders = true) {
     const envConfig = new Config()
     const fspiopDest = headers[ENUM.Http.Headers.FSPIOP.DESTINATION]
     try {
@@ -866,12 +867,23 @@ class QuotesModel {
       this.writeLog(`Making error callback to participant '${fspiopSource}' for quoteId '${quoteId}' to ${fullCallbackUrl} for error: ${util.inspect(fspiopError.toFullErrorObject())}`)
 
       // make an error callback
-      const fromSwitchHeaders = Object.assign({}, headers, {
-        'fspiop-destination': fspiopSource,
-        'fspiop-source': ENUM.Http.Headers.FSPIOP.SWITCH.value,
-        'fspiop-http-method': ENUM.Http.RestMethods.PUT,
-        'fspiop-uri': fspiopUri
-      })
+      let fromSwitchHeaders
+
+      // modify/set the headers only in case it is explicitly requested to do so
+      // as this part needs to cover two different cases:
+      // 1. (do not modify them) when the Switch needs to relay an error, e.g. from a DFSP to another
+      // 2. (modify/set them) when the Switch needs send errors that are originating in the Switch, e.g. to send an error back to the caller
+      if (modifyHeaders === true) {
+        fromSwitchHeaders = Object.assign({}, headers, {
+          'fspiop-destination': fspiopSource,
+          'fspiop-source': ENUM.Http.Headers.FSPIOP.SWITCH.value,
+          'fspiop-http-method': ENUM.Http.RestMethods.PUT,
+          'fspiop-uri': fspiopUri
+        })
+      } else {
+        fromSwitchHeaders = Object.assign({}, headers)
+      }
+
       let opts = {
         method: ENUM.Http.RestMethods.PUT,
         url: fullCallbackUrl,
