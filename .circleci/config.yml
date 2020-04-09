@@ -213,21 +213,20 @@ jobs:
           prefix: licenses
 
   image-scan:
-    # executor: anchore/anchore_engine
-    executor: default-docker
+    executor: anchore/anchore_engine
     steps:
       - setup_remote_docker
       - checkout
+      - run:
+          name: Install docker dependencies for anchore
+          command: |
+            apk add --update py-pip docker python-dev libffi-dev openssl-dev gcc libc-dev make jq npm
       - run:
           name: Install general dependencies
           command: *defaults_Dependencies
       - run:
           name: Install AWS CLI dependencies
           command: *defaults_awsCliDependencies
-      - run:
-          name: Install docker dependencies for anchore
-          command: |
-            apk add --update py-pip docker python-dev libffi-dev openssl-dev gcc libc-dev make jq
       - attach_workspace:
           at: /tmp
       - run:
